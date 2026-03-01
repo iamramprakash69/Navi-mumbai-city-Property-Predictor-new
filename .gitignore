@@ -6,3 +6,7 @@ __pycache__/
 *.pyc
 .next/
 .env
+node_modules/
+__pycache__/
+.next/
+.DS_Store
