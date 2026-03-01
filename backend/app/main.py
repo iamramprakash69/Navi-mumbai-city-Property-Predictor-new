@@ -1,7 +1,3 @@
-"""
-Main FastAPI application for house price prediction.
-"""
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -13,84 +9,86 @@ from .schemas import (
     RealEstatePredictionResponse,
 )
 
-app = FastAPI(
-    title="Navi Mumbai House Price Prediction API",
-    description="API for predicting property prices in Navi Mumbai based on historical data.",
-    version="1.0.0",
-)
+import os
 
-# CORS configuration
+app = FastAPI(title="Prediction API", version="0.1.0")
+
+# 1. FIX FastAPI CORS - Allowing Vercel and *
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust this for production
+    allow_origins=[
+        "https://prediction-frontend-mauve.vercel.app",
+        "*"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
+# 2. VERIFY API ROUTES - Root and Predict
 @app.get("/")
-async def root():
-    """Root endpoint to check API status."""
-    return {
-        "status": "online",
-        "message": "Navi Mumbai House Price Prediction API is running.",
-    }
+def root():
+    return {"status": "API is running successfully", "environment": "Production"}
 
 
 @app.get("/health")
-async def health():
-    """Health check endpoint."""
-    return {"status": "healthy"}
+def health() -> dict:
+    return {"status": "ok"}
+
+
+@app.post("/predict", response_model=PredictionResponse)
+def predict(payload: PredictionRequest) -> PredictionResponse:
+    try:
+        result = predictor.predict(payload.model, payload.features)
+    except KeyError:
+        raise HTTPException(status_code=400, detail=f"Unknown model '{payload.model}'.")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    return PredictionResponse(
+        model=payload.model,
+        prediction=result,
+        details={"input_features": payload.features},
+    )
 
 
 @app.post("/predict/real-estate", response_model=RealEstatePredictionResponse)
-async def predict_real_estate(
-    payload: RealEstatePredictionRequest,
-) -> RealEstatePredictionResponse:
+def predict_real_estate(payload: RealEstatePredictionRequest) -> RealEstatePredictionResponse:
     """
     Predict real estate prices for Navi Mumbai properties.
-
-    Args:
-        payload: The property features for prediction.
-
-    Returns:
-        The predicted price and market status.
+    
+    This endpoint uses a trained Linear Regression model to predict property prices
+    based on location, area, number of bedrooms/bathrooms, age, and parking availability.
     """
     try:
-        # Convert Pydantic model to dictionary for the predictor
-        features = payload.model_dump()
+        # Convert Pydantic model to dictionary
+        features = {
+            'location': payload.location,
+            'area': payload.area,
+            'bhk': payload.bhk,
+            'bathrooms': payload.bathrooms,
+            'age': payload.age,
+            'parking': 1 if payload.parking else 0,
+        }
         
         # Get prediction from the real_estate model
-        result = predictor.predict("real_estate", features)
+        result = predictor.predict('real_estate', features)
         
         return RealEstatePredictionResponse(
-            predicted_price=result["predicted_price"],
-            price_per_sqft=result["price_per_sqft"],
-            market_status=result["market_status"],
+            predicted_price=result['predicted_price'],
+            price_per_sqft=result['price_per_sqft'],
+            market_status=result['market_status'],
         )
         
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Model error: {str(exc)}. Make sure the model is trained."
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
         raise HTTPException(
-            status_code=500, detail=f"Prediction failed: {str(exc)}"
+            status_code=500, 
+            detail=f"Prediction failed: {str(exc)}"
         )
-
-
-@app.post("/predict", response_model=PredictionResponse)
-async def predict_general(payload: PredictionRequest) -> PredictionResponse:
-    """General prediction endpoint (primarily for testing)."""
-    try:
-        result = predictor.predict(payload.model, payload.features)
-        return PredictionResponse(
-            model=payload.model,
-            prediction=result,
-            details={"input_features": payload.features},
-        )
-    except KeyError:
-        raise HTTPException(
-            status_code=400, detail=f"Unknown model '{payload.model}'."
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
