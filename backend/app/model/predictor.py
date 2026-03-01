@@ -13,7 +13,7 @@ import pandas as pd
 
 # Get model path
 MODEL_DIR = Path(__file__).parent
-MODEL_PATH = MODEL_DIR / "model.pkl"
+MODEL_PATH = MODEL_DIR / "model_v2.pkl"
 
 # Global variable to store loaded model artifacts
 _model_artifacts = None
@@ -24,40 +24,22 @@ def load_model_artifacts():
     global _model_artifacts
     
     if _model_artifacts is None:
-        if not MODEL_PATH.exists():
-            raise FileNotFoundError(
-                f"Model file not found at {MODEL_PATH}. "
-                "Please run train_model.py first to train the model."
-            )
+        path_to_use = MODEL_PATH if MODEL_PATH.exists() else MODEL_DIR / "model.pkl"
+        if not path_to_use.exists():
+            raise FileNotFoundError(f"Model file not found at {path_to_use}")
         
-        with open(MODEL_PATH, 'rb') as f:
+        with open(path_to_use, 'rb') as f:
             _model_artifacts = pickle.load(f)
         
-        print("✓ Model loaded successfully!")
-        print(f"✓ Features: {_model_artifacts['feature_columns']}")
+        print(f"✓ Model loaded successfully from {path_to_use}!")
     
     return _model_artifacts
 
 
 def real_estate_predict(features: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Predict real estate price for Navi Mumbai properties.
-    
-    Input features expected:
-    - location: str (Vashi, Nerul, Kharghar, Panvel)
-    - area: float (square feet)
-    - bhk: int (number of bedrooms)
-    - bathrooms: int
-    - age: int (years)
-    - parking: int or bool (1/True for yes, 0/False for no)
-    
-    Returns:
-    - predicted_price: float (INR)
-    - price_per_sqft: float (INR)
-    - market_status: str (Below Market / Average / Above Market)
+    Predict real estate price for Navi Mumbai properties using v2 model.
     """
-    
-    # Load model artifacts (only once, cached globally)
     artifacts = load_model_artifacts()
     model = artifacts['model']
     scaler = artifacts['scaler']
@@ -65,74 +47,50 @@ def real_estate_predict(features: Dict[str, Any]) -> Dict[str, Any]:
     location_columns = artifacts['location_columns']
     market_stats = artifacts['market_stats']
     
-    # Extract input features
-    location = features.get('location', '').strip()
-    area = float(features.get('area', 0))
-    bhk = int(features.get('bhk', 0))
-    bathrooms = int(features.get('bathrooms', 0))
-    age = int(features.get('age', 0))
-    parking = int(features.get('parking', 0))
+    # Create input dictionary with all features
+    input_data = {}
     
-    # Validate inputs
-    if not location:
-        raise ValueError("Location is required")
-    if area <= 0:
-        raise ValueError("Area must be greater than 0")
-    if bhk <= 0:
-        raise ValueError("BHK must be greater than 0")
+    # Numeric features matching training columns
+    input_data['area_sqft'] = [float(features.get('area_sqft', 0))]
+    input_data['bhk'] = [int(features.get('bhk', 0))]
+    input_data['bathrooms'] = [int(features.get('bathrooms', 0))]
+    input_data['floor'] = [int(features.get('floor', 0))]
+    input_data['total_floors'] = [int(features.get('total_floors', 0))]
+    input_data['age_of_property'] = [int(features.get('age_of_property', 0))]
+    input_data['parking'] = [1 if features.get('parking') else 0]
+    input_data['lift'] = [1 if features.get('lift') else 0]
     
-    # Create a dataframe with the input (same structure as training data)
-    input_data = {
-        'Area': [area],
-        'BHK': [bhk],
-        'Bathrooms': [bathrooms],
-        'Age': [age],
-        'Parking': [parking],
-    }
-    
-    # Add location columns (one-hot encoding)
-    # All location columns start as 0
+    # One-hot encoded location
+    location = features.get('location', '').strip().lower()
     for loc_col in location_columns:
-        input_data[loc_col] = [0]
-    
-    # Set the appropriate location column to 1
-    location_col_name = f'Location_{location}'
-    if location_col_name in location_columns:
-        input_data[location_col_name] = [1]
-    else:
-        raise ValueError(
-            f"Unknown location: {location}. "
-            f"Valid locations: {[col.replace('Location_', '') for col in location_columns]}"
-        )
-    
-    # Create DataFrame
+        # loc_col looks like "Location_kharghar" or "Location_Kharghar"
+        # The training script used df_encoded = pd.get_dummies(df, columns=['location'], prefix='Location')
+        # So it depends on the CSV values. In the CSV, locations are likely lowercase or capitalized.
+        input_data[loc_col] = [1 if loc_col.lower() == f"location_{location}" else 0]
+        
+    # Create DataFrame and ensure column order
     input_df = pd.DataFrame(input_data)
-    
-    # Ensure columns are in the same order as training
     input_df = input_df[feature_columns]
     
-    # Scale the features (same scaling as training)
+    # Scale
     input_scaled = scaler.transform(input_df)
     
-    # Make prediction
+    # Predict
     predicted_price = model.predict(input_scaled)[0]
     
-    # Calculate price per square foot
+    # Metrics
+    area = input_data['area_sqft'][0]
     price_per_sqft = predicted_price / area if area > 0 else 0
     
-    # Determine market status (business logic)
-    avg_price = market_stats['avg_price']
+    # Market status
     avg_price_per_sqft = market_stats['avg_price_per_sqft']
-    
-    # Market comparison logic
-    # Using price per sqft for more accurate comparison
     if price_per_sqft < avg_price_per_sqft * 0.90:
         market_status = "Below Market"
     elif price_per_sqft > avg_price_per_sqft * 1.10:
         market_status = "Above Market"
     else:
         market_status = "Average"
-    
+        
     return {
         'predicted_price': round(predicted_price, 2),
         'price_per_sqft': round(price_per_sqft, 2),

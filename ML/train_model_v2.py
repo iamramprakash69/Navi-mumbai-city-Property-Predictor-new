@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 # Paths
-BASE_DIR = Path("/Users/ram/Pravah/pravah-template")
+BASE_DIR = Path("/Users/ram/Pravah")
 DATASET_PATH = BASE_DIR / "navi_mumbai_real_estate_uncleaned_2500_cleaned.csv"
 OUTPUT_DIR = Path("/Users/ram/Pravah/backend/app/model")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
