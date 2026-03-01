@@ -17,6 +17,7 @@ app = FastAPI(title="Prediction API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://navi-mumbai-city-property-predictor.vercel.app",
         "https://prediction-frontend-mauve.vercel.app",
         "*"
     ],
@@ -61,15 +62,8 @@ def predict_real_estate(payload: RealEstatePredictionRequest) -> RealEstatePredi
     based on location, area, number of bedrooms/bathrooms, age, and parking availability.
     """
     try:
-        # Convert Pydantic model to dictionary
-        features = {
-            'location': payload.location,
-            'area': payload.area,
-            'bhk': payload.bhk,
-            'bathrooms': payload.bathrooms,
-            'age': payload.age,
-            'parking': 1 if payload.parking else 0,
-        }
+        # Convert Pydantic model to dictionary directly as field names now match
+        features = payload.model_dump()
         
         # Get prediction from the real_estate model
         result = predictor.predict('real_estate', features)
